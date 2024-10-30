@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 
+{% block title %}Login - Axlen{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-6">
         <h2 class="text-center mb-4">Login</h2>
-        <form action="{{ url_for('login') }}" method="POST" class="border p-4 shadow-sm">
+        <form action="{{ url_for('login') }}" method="POST">
             <div class="mb-3">
-                <label for="username" class="form-label">Username</label>
-                <input type="text" name="username" id="username" class="form-control" required>
+                <label for="identifier" class="form-label">Username or Email</label>
+                <input type="text" name="identifier" id="identifier" class="form-control" required>
             </div>
             <div class="mb-3">
                 <label for="password" class="form-label">Password</label>
