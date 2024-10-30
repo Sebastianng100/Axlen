@@ -1,26 +1,18 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>Axlen - Products</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <h1>Axlen Product Store</h1>
+{% extends "base.html" %}
 
-    <ul>
-        {% for product in products %}
-            <li>
-                <h2>{{ product['name'] }}</h2>
-                <p>{{ product['description'] }}</p>
-                <p>Price: ${{ product['price'] }}</p>
-                <form action="{{ url_for('add_to_cart') }}" method="POST">
-                    <input type="hidden" name="product_name" value="{{ product['name'] }}">
-                    <button type="submit">Add to Cart</button>
-                </form>
-            </li>
-        {% endfor %}
-    </ul>
-
-    <a href="{{ url_for('view_cart') }}">View Cart</a>
-</body>
-</html>
+{% block content %}
+<h1 class="text-center mb-4">Available Products</h1>
+<div class="row row-cols-1 row-cols-md-3 g-4">
+    {% for product in products %}
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">{{ product['name'] }}</h5>
+                <p class="card-text">{{ product['description'] }}</p>
+                <p class="card-text"><strong>Price: ${{ product['price'] }}</strong></p>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

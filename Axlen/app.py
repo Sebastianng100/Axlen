@@ -6,6 +6,8 @@ from flask_session import Session
 from werkzeug.security import generate_password_hash, check_password_hash
 import gradio as gr
 import requests
+from functools import wraps
+from bson.objectid import ObjectId  # Ensure this import is at the top
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Required for Flask sessions
@@ -20,14 +22,37 @@ mongo = PyMongo(app)
 users_collection = mongo.db.users
 products_collection = mongo.db.products
 
+@app.route('/test_mongo')
+def test_mongo():
+    try:
+        product = products_collection.find_one()
+        if product:
+            # Convert the ObjectId to a string
+            product['_id'] = str(product['_id'])
+        print(f"Test Mongo Product: {product}")  # Debug print
+        return jsonify({"status": "success", "product": product}), 200
+    except Exception as e:
+        print(f"Error connecting to MongoDB: {e}")  # Debugging
+        return "MongoDB Connection Error", 500
+
+# Helper: Check if User is Logged In
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session:
+            return redirect(url_for('login'))  # Redirect to login if not logged in
+        return f(*args, **kwargs)
+    return decorated_function
+
 # Helper function to fetch all products
 def get_products():
     return list(products_collection.find({}, {"_id": 0}))
 
-# Flask Route: Add product to the cart
+# Flask Route: Add product to the cart (Login Required)
 @app.route('/add_to_cart', methods=['POST'])
+@login_required
 def add_to_cart():
-    username = request.json.get('username')  # Identify user
+    username = session['username']  # Get logged-in user
     product_name = request.json.get('product_name')
 
     product = products_collection.find_one({"name": product_name}, {"_id": 0})
@@ -46,7 +71,6 @@ def add_to_cart():
 @app.route('/get_cart', methods=['GET'])
 def get_cart():
     username = request.args.get('username')  # Identify user
-
     user = users_collection.find_one({"username": username}, {"_id": 0, "cart": 1})
     if not user or "cart" not in user:
         return jsonify({"cart": [], "total": 0})
@@ -56,10 +80,11 @@ def get_cart():
 
     return jsonify({"cart": cart, "total": total})
 
-# Flask Route: Checkout
+# Flask Route: Checkout (Login Required)
 @app.route('/checkout', methods=['POST'])
+@login_required
 def checkout():
-    username = request.json.get('username')
+    username = session['username']  # Get logged-in user
 
     users_collection.update_one(
         {"username": username},
@@ -71,107 +96,75 @@ def checkout():
 # Route: Display Products on Homepage
 @app.route('/')
 def home():
-    products = get_products()
-    return render_template('index.html', products=products)
+    try:
+        products = get_products()
+        print(f"Products fetched: {products}")  # Debug print
+        return render_template('index.html', products=products)
+    except Exception as e:
+        print(f"Error in home route: {e}")  # Print the error to the console
+        return "Internal Server Error", 500
 
-# Flask Route: User Registration
-@app.route('/register', methods=['POST'])
-def register():
-    username = request.json.get('username')
-    password = request.json.get('password')
-
-    if users_collection.find_one({"username": username}):
-        return jsonify({"status": "error", "message": "Username already exists!"})
-
-    hashed_password = generate_password_hash(password)
-    users_collection.insert_one({"username": username, "password": hashed_password, "cart": []})
-    return jsonify({"status": "success", "message": "Registration successful!"})
 
 # Flask Route: User Login
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    username = request.json.get('username')
-    password = request.json.get('password')
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
 
-    user = users_collection.find_one({"username": username})
-    if user and check_password_hash(user["password"], password):
-        session['username'] = username
-        session.permanent = True  # Make session permanent
-        return jsonify({"status": "success", "message": f"Welcome {username}!"})
-    
-    return jsonify({"status": "error", "message": "Invalid credentials."})
+        user = users_collection.find_one({"username": username})
+        if user and check_password_hash(user["password"], password):
+            session['username'] = username
+            session.permanent = True  # Keep the session active
+            print(f"Logged in as: {username}")  # Debugging print
+            flash("Login successful!")
+            return redirect(url_for('home'))
+        flash("Invalid credentials, please try again.")
+    return render_template('login.html')
+
+# Flask Route: User Registration
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        if users_collection.find_one({"username": username}):
+            flash("Username already exists, please choose a different one.")
+        else:
+            hashed_password = generate_password_hash(password)
+            users_collection.insert_one({
+                "username": username, 
+                "password": hashed_password, 
+                "cart": []
+            })
+            flash("Registration successful! Please login.")
+            return redirect(url_for('login'))
+    return render_template('register.html')
 
 # Flask Route: Logout
-@app.route('/logout', methods=['GET'])
+@app.route('/logout')
 def logout():
+    print(f"Logging out user: {session.get('username')}")  # Debug print
     session.pop('username', None)
-    return jsonify({"status": "success", "message": "Logged out successfully."})
+    flash("Logged out successfully.")
+    return redirect(url_for('home'))
 
-# Route: View Cart
+# Flask Route: Cart Page (Login Required)
 @app.route('/cart')
-def view_cart():
-    try:
-        response = requests.get('http://127.0.0.1:5000/get_cart')
-        data = response.json()
-        cart = data.get('cart', [])
-        total = data.get('total', 0)
+@login_required
+def cart():
+    username = session['username']
+    user = users_collection.find_one({"username": username}, {"_id": 0, "cart": 1})
+    cart = user.get("cart", [])
+    total = sum(item["price"] for item in cart)
 
-        # Format the cart contents
-        if cart:
-            cart_display = "\n".join([f"{item['name']} - ${item['price']}" for item in cart])
-        else:
-            cart_display = "Your cart is empty."
-
-        return f"{cart_display}\n\nTotal: ${total:.2f}"
-    except requests.exceptions.ConnectionError:
-        return "Failed to connect to the server."
+    return render_template('cart.html', cart=cart, total=total)
 
 # Gradio Interface
 def gradio_interface():
     with gr.Blocks() as demo:
         gr.Markdown("# 🛒 Welcome to Axlen")
-
-        # User Registration Tab
-        with gr.Tab("Register"):
-            reg_username = gr.Textbox(label="Username")
-            reg_password = gr.Textbox(label="Password", type="password")
-            register_button = gr.Button("Register")
-            register_output = gr.Textbox(label="Registration Status")
-
-            # Callback: User Registration
-            def register_user(username, password):
-                response = requests.post(
-                    'http://127.0.0.1:5000/register',
-                    json={"username": username, "password": password}
-                )
-                return response.json().get('message', 'Registration failed.')
-
-            register_button.click(
-                register_user,
-                inputs=[reg_username, reg_password],
-                outputs=[register_output]
-            )
-
-        # User Login Tab
-        with gr.Tab("Login"):
-            login_username = gr.Textbox(label="Username")
-            login_password = gr.Textbox(label="Password", type="password")
-            login_button = gr.Button("Login")
-            login_output = gr.Textbox(label="Login Status")
-
-            # Callback: User Login
-            def login_user(username, password):
-                response = requests.post(
-                    'http://127.0.0.1:5000/login',
-                    json={"username": username, "password": password}
-                )
-                return response.json().get('message', 'Login failed.')
-
-            login_button.click(
-                login_user,
-                inputs=[login_username, login_password],
-                outputs=[login_output]
-            )
 
         # Product listing tab
         with gr.Tab("Products"):
@@ -180,7 +173,6 @@ def gradio_interface():
 
         # Cart management tab
         with gr.Tab("Cart"):
-            username = gr.Textbox(label="Enter Username")  # Collect username
             product_name = gr.Dropdown(
                 choices=[p["name"] for p in get_products()],
                 label="Select Product to Add to Cart"
@@ -190,52 +182,51 @@ def gradio_interface():
             checkout_button = gr.Button("Checkout")
             checkout_output = gr.Textbox(label="Checkout Status")
 
-            # Callback: View Cart Contents for the user
-            def view_cart(username):
-                try:
-                    response = requests.get(
-                        'http://127.0.0.1:5000/get_cart', params={"username": username}
-                    )
-                    data = response.json()
-                    cart = data.get('cart', [])
-                    total = data.get('total', 0)
+            # Callback: View Cart Contents
+            def view_cart():
+                response = requests.get(
+                    'http://127.0.0.1:5000/get_cart', 
+                    params={"username": session.get('username')}
+                )
+                data = response.json()
+                cart = data.get('cart', [])
+                total = data.get('total', 0)
 
-                    if cart:
-                        cart_display = "\n".join([f"{item['name']} - ${item['price']}" for item in cart])
-                    else:
-                        cart_display = "Your cart is empty."
+                cart_display = "\n".join([f"{item['name']} - ${item['price']}" for item in cart])
+                return f"{cart_display}\n\nTotal: ${total:.2f}"
 
-                    return f"{cart_display}\n\nTotal: ${total:.2f}"
-                except requests.exceptions.ConnectionError:
-                    return "Failed to connect to the server."
-
-            # Callback: Add product to user's cart and update cart contents
-            def add_product_to_cart(username, product_name):
+            # Callback: Add product to cart
+            def add_product_to_cart(product_name):
                 response = requests.post(
                     'http://127.0.0.1:5000/add_to_cart',
-                    json={"username": username, "product_name": product_name}
+                    json={"username": session.get('username'), "product_name": product_name}
                 )
                 message = response.json().get('message', 'Error adding product.')
-                cart_content_after_add = view_cart(username)
+                cart_content_after_add = view_cart()
                 return message, cart_content_after_add
+            
+            # Callback: Perform Checkout
+            def perform_checkout():
+                try:
+                    response = requests.post(
+                        'http://127.0.0.1:5000/checkout',
+                        json={"username": session.get('username')}
+                    )
+                    message = response.json().get('message', 'Checkout failed.')
+                    # Clear the cart contents after checkout
+                    return message, "Cart is empty."
+                except requests.exceptions.ConnectionError:
+                    return "Failed to connect to the server.", ""
 
             add_button = gr.Button("Add to Cart")
             add_button.click(
                 add_product_to_cart,
-                inputs=[username, product_name],
+                inputs=[product_name],
                 outputs=[add_output, cart_contents]
             )
 
-            def perform_checkout(username):
-                response = requests.post(
-                    'http://127.0.0.1:5000/checkout',
-                    json={"username": username}
-                )
-                return "Checkout successful! Your cart is now empty.", "Cart is empty."
-
             checkout_button.click(
-                perform_checkout,
-                inputs=[username],
+                perform_checkout, 
                 outputs=[checkout_output, cart_contents]
             )
 
