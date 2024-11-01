@@ -1,18 +1,56 @@
 {% extends "base.html" %}
 
+{% block title %}Axlen - Home{% endblock %}
+
 {% block content %}
-<h1 class="text-center mb-4">Available Products</h1>
-<div class="row row-cols-1 row-cols-md-3 g-4">
-    {% for product in products %}
-    <div class="col">
-        <div class="card h-100">
-            <div class="card-body">
-                <h5 class="card-title">{{ product['name'] }}</h5>
-                <p class="card-text">{{ product['description'] }}</p>
-                <p class="card-text"><strong>Price: ${{ product['price'] }}</strong></p>
+<div class="container mt-5">
+    <h1 class="text-center">Our Products</h1>
+    <div class="row mt-4">
+        {% for product in products %}
+        <div class="col-md-4 mb-4">
+            <div class="card">
+                <img src="{{ url_for('static', filename='images/' + product['image_url']) }}" 
+                     class="card-img-top" alt="{{ product['name'] }}">
+                <div class="card-body">
+                    <h5 class="card-title">{{ product['name'] }}</h5>
+                    <p class="card-text">{{ product['description'] }}</p>
+                    <p class="card-text"><strong>Price:</strong> ${{ product['price'] }}</p>
+                    <button class="btn btn-primary add-to-cart" data-product="{{ product['name'] }}">
+                        Add to Cart
+                    </button>
+                </div>
             </div>
         </div>
+        {% endfor %}
     </div>
-    {% endfor %}
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const buttons = document.querySelectorAll('.add-to-cart');
+
+        buttons.forEach(button => {
+            button.addEventListener('click', function () {
+                const productName = this.getAttribute('data-product');
+
+                fetch('/add_to_cart', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ product_name: productName })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert(data.message);
+                    } else {
+                        alert(data.message || 'Error adding product to cart.');
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+            });
+        });
+    });
+</script>
 {% endblock %}

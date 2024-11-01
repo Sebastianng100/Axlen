@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}About Us - Axlen{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="text-center">
+        <h1 class="mb-4">About Us</h1>
+        <p class="lead">Welcome to <strong>Axlen</strong> – Your one-stop shop for premium electronics. We bring cutting-edge technology and elegant design right to your fingertips.</p>
+    </div>
+
+    <div class="row mt-5">
+        <div class="col-md-12">
+            <h3>Our Mission</h3>
+            <p>At Axlen, we aim to provide exceptional quality products like smartphones, laptops, and headphones at competitive prices. We believe in innovation and are committed to enhancing your digital experience with the best tools and devices on the market.</p>
+            <img src="{{ url_for('static', filename='images/mission.jpg') }}" alt="Mission" class="img-fluid rounded shadow mb-4">
+        </div>
+    </div>
+
+    <div class="row mt-5">
+        <div class="col-md-12">
+            <h3>Our Vision</h3>
+            <p>Our vision is to become a leader in the online electronics retail space by offering exceptional customer service and reliable products. Axlen aims to connect you with the most advanced technology, ensuring that every device meets the highest standards.</p>
+            <img src="{{ url_for('static', filename='images/vision.jpg') }}" alt="Vision" class="img-fluid rounded shadow mb-4">
+        </div>
+    </div>
+
+    <div class="text-center mt-5">
+        <h2>Meet Our Products</h2>
+        <p class="mb-4">Discover the latest innovations we offer. Explore our selection of premium devices designed to elevate your experience.</p>
+        <a href="{{ url_for('home') }}" class="btn btn-primary btn-lg">Explore Products</a>
+    </div>
+</div>
+{% endblock %}

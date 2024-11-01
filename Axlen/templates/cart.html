@@ -13,12 +13,12 @@
         {% for item in cart %}
         <tr>
             <td>{{ item['name'] }}</td>
-            <td>${{ item['price'] }}</td>
+            <td>${{ '%.2f' | format(item['price']) }}</td>  <!-- Ensures 2 decimal places -->
         </tr>
         {% endfor %}
     </tbody>
 </table>
-<p class="text-end"><strong>Total: ${{ total }}</strong></p>
+<p class="text-end"><strong>Total: ${{ '%.2f' | format(total) }}</strong></p>  <!-- Formats total to 2 decimal places -->
 <form action="{{ url_for('checkout') }}" method="POST" class="text-end">
     <button type="submit" class="btn btn-success">Checkout</button>
 </form>

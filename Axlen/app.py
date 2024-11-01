@@ -38,6 +38,37 @@ def test_insert():
         return "Test insert successful!"
     except Exception as e:
         return f"MongoDB Insert Error: {str(e)}"
+    
+@app.route('/test_products')
+def test_products():
+    products = get_products()
+    return jsonify(products)  # Return the products as JSON to inspect
+    
+@app.route('/add_sample_products')
+def add_sample_products():
+    products = [
+        {
+            "name": "iPhone 16 Pro Max - Pink",
+            "price": 699.99,
+            "description": "A high-quality smartphone with excellent features.",
+            "image_url": "smartphone.jpg"
+        },
+        {
+            "name": "Macbook - Pink",
+            "price": 1299.99,
+            "description": "A powerful laptop for work and gaming.",
+            "image_url": "laptop.jpg"
+        },
+        {
+            "name": "Airpods Max - Pink",
+            "price": 199.99,
+            "description": "Noise-canceling headphones for immersive sound.",
+            "image_url": "headphones.jpg"
+        }
+    ]
+    products_collection.insert_many(products)
+    return "Sample products added!"
+
 
 # Helper: Check if User is Logged In
 def login_required(f):
@@ -50,20 +81,26 @@ def login_required(f):
 
 # Helper function to fetch all products
 def get_products():
-    return list(products_collection.find({}, {"_id": 0}))
+    # Fetch products with the relevant fields from MongoDB
+    products = products_collection.find({}, {"_id": 0, "name": 1, "description": 1, "price": 1, "image_url": 1})
+    products_list = list(products)  # Convert the cursor to a list
+
+    print(f"Fetched Products: {products_list}")  # Debug print to verify data
+    return products_list
 
 # Flask Route: Add product to the cart (Login Required)
 @app.route('/add_to_cart', methods=['POST'])
 @login_required
 def add_to_cart():
-    username = session['username']  # Get logged-in user
-    product_name = request.json.get('product_name')
+    username = session['username']  # Get the logged-in user's username
+    data = request.get_json()  # Parse JSON data from the AJAX request
+    product_name = data.get('product_name')
 
     product = products_collection.find_one({"name": product_name}, {"_id": 0})
     if not product:
         return jsonify({"status": "error", "message": "Product not found."})
 
-    # Add product to the user's cart in MongoDB
+    # Add the product to the user's cart in MongoDB
     users_collection.update_one(
         {"username": username},
         {"$push": {"cart": product}}
@@ -98,7 +135,14 @@ def checkout():
 def home():
     try:
         products = get_products()
-        print(f"Products fetched: {products}")  # Debug print
+        print(f"Products fetched: {products}")  # Debug print to confirm products
+
+        # Ensure all products contain the 'image_url' key
+        for product in products:
+            if 'image_url' not in product:
+                print(f"Missing 'image_url' for product: {product}")
+                product['image_url'] = 'placeholder.jpg'  # Use a default image if missing
+
         return render_template('index.html', products=products)
     except Exception as e:
         print(f"Error in home route: {e}")  # Print the error to the console
@@ -183,6 +227,10 @@ def logout():
     flash("Logged out successfully.")
     return redirect(url_for('home'))
 
+@app.route('/about')
+def about():
+    return render_template('about.html')
+
 # Flask Route: Cart Page (Login Required)
 @app.route('/cart')
 @login_required
@@ -193,6 +241,89 @@ def cart():
     total = sum(item["price"] for item in cart)
 
     return render_template('cart.html', cart=cart, total=total)
+
+#Gradio codes
+def gradio_interface():
+    with gr.Blocks() as demo:
+        gr.Markdown("# 🛒 Welcome to Axlen", elem_classes=["text-center", "display-4", "mt-4"])
+
+        # Product listing tab with Add to Cart functionality
+        with gr.Tab("Products"):
+            gr.Markdown("<h3>Available Products</h3>", elem_classes=["mt-4", "mb-2"])
+
+            # Display products in a DataFrame
+            product_display = gr.Dataframe(headers=["Product", "Price", "Description"], interactive=False)
+            product_display.value = [[
+                item["name"], 
+                f"${item['price']:.2f}", 
+                item["description"]
+            ] for item in get_products()]  # Fetch products from DB and format prices to 2 decimal places
+
+            # Prompt for username and product selection for adding to cart
+            user_identifier = gr.Textbox(label="Enter Username", placeholder="Username for Cart Actions")
+            selected_product = gr.Dropdown(
+                choices=[item["name"] for item in get_products()],
+                label="Select a Product to Add to Cart"
+            )
+            add_to_cart_message = gr.Textbox(label="Cart Status", placeholder="Add items to cart", interactive=False)
+
+            # Add to Cart function and button
+            def add_to_cart(username, product_name):
+                if not username:
+                    return "Please enter your username first."
+                response = requests.post(
+                    'http://127.0.0.1:5000/add_to_cart', 
+                    json={"username": username, "product_name": product_name}
+                )
+                data = response.json()
+                return data.get("message", "Error adding product to cart.")
+
+            gr.Button("Add to Cart").click(
+                add_to_cart, 
+                inputs=[user_identifier, selected_product], 
+                outputs=add_to_cart_message
+            )
+
+        # Cart tab to display current cart contents and checkout
+        with gr.Tab("Cart"):
+            cart_contents = gr.Dataframe(headers=["Product", "Price"], interactive=False, label="Current Cart Contents")
+            checkout_status = gr.Textbox(label="Checkout Status", interactive=False)
+            total_display = gr.Textbox(label="Total", value="Total: $0.00", interactive=False)
+
+            # Function to view cart contents
+            def view_cart(username):
+                if not username:
+                    return [], "Please enter your username to view cart."
+                
+                response = requests.get('http://127.0.0.1:5000/get_cart', params={"username": username})
+                if response.status_code == 200:
+                    data = response.json()
+                    cart_items = [[item["name"], f"${item['price']:.2f}"] for item in data.get("cart", [])]
+                    total = f"Total: ${data.get('total', 0):.2f}"
+                    return cart_items, total
+                else:
+                    return [], "Error fetching cart."
+
+            gr.Button("Refresh Cart").click(
+                view_cart, 
+                inputs=user_identifier, 
+                outputs=[cart_contents, total_display]
+            )
+
+            # Checkout function and button
+            def checkout(username):
+                if not username:
+                    return "Please enter your username to checkout.", ""
+                
+                response = requests.post('http://127.0.0.1:5000/checkout', json={"username": username})
+                if response.status_code == 200:
+                    return "Checkout successful! Your cart is now empty.", "Cart is empty."
+                else:
+                    return "Checkout failed. Please try again.", ""
+
+            gr.Button("Checkout").click(checkout, inputs=user_identifier, outputs=[checkout_status, cart_contents])
+
+    return demo
 
 # Run Flask and Gradio
 if __name__ == "__main__":
